@@ -31,6 +31,7 @@ beforeEach(function () {
         $table->string('pkey');
         $table->string('active')->default('YES');
         $table->string('cluster')->nullable();
+        $table->string('dvrvmail')->nullable();
     });
 
     Schema::create('ivrmenu', function (Blueprint $table) {
@@ -53,8 +54,9 @@ beforeEach(function () {
     ]);
 
     DB::table('ipphone')->insert([
-        ['id' => 'extaksuid0000000000000001', 'shortuid' => 'exta0001', 'pkey' => 'ExtA', 'active' => 'YES', 'cluster' => 'tenanta1'],
-        ['id' => 'extbksuid0000000000000001', 'shortuid' => 'extb0001', 'pkey' => 'ExtB', 'active' => 'YES', 'cluster' => 'tenantb1'],
+        ['id' => 'extaksuid0000000000000001', 'shortuid' => 'exta0001', 'pkey' => '401', 'active' => 'YES', 'cluster' => 'tenanta1', 'dvrvmail' => '401'],
+        ['id' => 'extaksuid0000000000000002', 'shortuid' => 'exta0002', 'pkey' => '402', 'active' => 'YES', 'cluster' => 'tenanta1', 'dvrvmail' => 'None'],
+        ['id' => 'extbksuid0000000000000001', 'shortuid' => 'extb0001', 'pkey' => '501', 'active' => 'YES', 'cluster' => 'tenantb1', 'dvrvmail' => '501'],
     ]);
 
     // Assertions use Queues (App\Models\Queue keys off id, not pkey) rather than Extensions/CustomApps:
@@ -121,6 +123,16 @@ test('destinations index returns tenant-scoped extensions when cluster in scope'
 
     $response->assertOk()
         ->assertJsonPath('Queues', ['QueueA']);
+});
+
+test('destinations index includes leave-voicemail *ext for mailboxes only', function () {
+    pbx3DestinationTenantUser(['tenanta1']);
+
+    $response = $this->getJson('/api/destinations?cluster=TenantA');
+
+    $response->assertOk()
+        ->assertJsonPath('Voicemail', ['*401']);
+    expect($response->json('Voicemail'))->not->toContain('*402');
 });
 
 test('destinations index still requires cluster param for admin', function () {

@@ -19,9 +19,10 @@ class DestinationController extends Controller
     use EnforcesClusterScope;
 
     /**
-     * Return endpoint index for destination dropdowns (Inbound routes, IVRs).
+     * Return endpoint index for destination dropdowns (Inbound routes, IVRs, Queues).
      * Requires ?cluster={tenantPkey} — without it the full instance would leak across tenants.
-     * Trunks are excluded (destination lists invoke endpoints: queues, extensions, IVRs, custom apps).
+     * Trunks are excluded (destination lists invoke endpoints: queues, extensions, IVRs,
+     * custom apps, and per-extension leave-voicemail *{ext} — same as SARK / GenAst).
      * Cluster filter matches both tenant pkey and tenant id (KSUID) so it works whether DB stores pkey or id.
      *
      * @param  Request  $request
@@ -43,6 +44,7 @@ class DestinationController extends Controller
             'Extensions' => $this->pkeys(IpPhone::query()->where('active', 'YES'), $clusterValues),
             'IVRs' => $this->pkeys(Ivr::query()->where('active', 'YES'), $clusterValues),
             'Queues' => $this->pkeys(Queue::query()->where('active', 'YES'), $clusterValues),
+            'Voicemail' => $this->voicemailDestinations($clusterValues),
         ];
 
         return response()->json($base, 200);
@@ -89,5 +91,33 @@ class DestinationController extends Controller
             $query->whereIn('cluster', $clusterValues);
         }
         return $query->orderBy('pkey')->pluck('pkey')->toArray();
+    }
+
+    /**
+     * Leave-voicemail destinations: *{extension pkey}, matching GenAst
+     * `exten => *{pkey},1,Voicemail(...)` (only when dvrvmail is not "None").
+     *
+     * @param  array|null  $clusterValues
+     * @return array<int, string>
+     */
+    private function voicemailDestinations($clusterValues)
+    {
+        $query = IpPhone::query()
+            ->where('active', 'YES')
+            ->where(function ($q) {
+                // GenAst: if ($phone['dvrvmail'] != "None") — NULL/empty still get *{pkey}.
+                $q->whereNull('dvrvmail')
+                    ->orWhere('dvrvmail', '!=', 'None');
+            });
+
+        if ($clusterValues !== null && count($clusterValues) > 0) {
+            $query->whereIn('cluster', $clusterValues);
+        }
+
+        return $query->orderBy('pkey')
+            ->pluck('pkey')
+            ->map(static fn ($pkey) => '*' . $pkey)
+            ->values()
+            ->toArray();
     }
 }
